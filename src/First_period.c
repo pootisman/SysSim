@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <math.h>
-/*#include <pthread.h>*/
+#include <pthread.h>
 
 #define VALID_ARGS "I:P:N:L:h"
 
@@ -11,12 +11,17 @@
 #define HELP "Help\nL <lambda>\nN <N of devices>"
 /*
 typedef struct task{
-  unsigned int totalSteps ,nModels, *pStepsEach;
-  double *pLambda, *pVect;
+  unsigned int totalSteps ,nClasses, *pStepsEach;
+  double *pLambdas, *stepArr, *Rt, *Lt;
 }task;
-
+*/
+/* Random seed and its mutex. */
+/*unsigned int cSeed = 0;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+*/
+/* Multithreaded modelling function.
 void *tester(void *args){
-  unsigned int i = 0, j = 0, k = 0;
+  unsigned int i = 0, j = 0, k = 0, nSteps = 0;;
   double rGen 0.0, maxTime = 0.0;
   task *pTask = (task *)args;
 
@@ -25,21 +30,48 @@ void *tester(void *args){
       j++;
     }
     
-    *(pTask->pVect + i) = -(1.0/ *(pTask->pLambda + j))log((double)(RAND_MAX - rand_r(cSeed))/(double)RAND_MAX);
-    
+    (void)pthread_mutex_lock(&mutex);
+    *(pTask->pVect + i) = -(1.0/ *(pTask->pLambdas + j))log((double)(RAND_MAX - rand_r(&cSeed))/(double)RAND_MAX);
+    (void)pthread_mutex_unlock(&mutex);
+
     if(*(pTask->pVect + i) > maxTime){
       maxTime = *(pTask->pVect + i);
     }
+  }
 
-    
+  nSteps = maxTime*10.0;
+  k = 0;
+
+  for(rGen = maxTime/nSteps; rGen < maxTime; rGen += maxTime/nSteps){
+    alive = 0;
+    failFunc = 0;
+    for(j = 0; j < nDevs; j++){
+      if(*(devTimes + j) >= stepper){
+	alive++;
+	if(*(devTimes + j) < (stepper + maxTime/nSteps)){
+	  failFunc++;
+	}
+      }
+    }
+    *(pTask->stepArr + k) = rGen;
+    *(pTask->Rt + k) = (double)alive/(double)(pTask->totalSteps);
+    *(pTask->Lt + k) = (double)failFunc/(double)*((double)nSteps/(double)maxTime);
+    ++k;
   }
 }
 */
+
 int main(int argc, char *argv[]){
   double *devTimes = NULL, *pLambdas = NULL, avgT = 0.0, stepper = 0.0, maxTime = 0.0, lambda = 0.0;
   int i = 0;
-  unsigned int nDevs = 0, j = 1, l = 0, alive = 0, failFunc = 0, nClasses = 0, *pNSummons = NULL, k = 0, rander = 0, nSteps = 0;
+  unsigned int nDevs = 0, j = 1, l = 0, alive = 0, failFunc = 0, nClasses = 0, *pNDevs = NULL, k = 0, rander = 0, nSteps = 0/*, boost = 0*/;
   FILE *histogram = NULL, *classes = NULL, *randInit = NULL;
+
+/*
+  pthread_t *pThreads = NULL;
+  pthread_attr_t threadAttr;
+  task *parameters = NULL;
+*/
 
   while((i = getopt(argc, argv, VALID_ARGS)) != -1){
     switch(i){
@@ -52,11 +84,11 @@ int main(int argc, char *argv[]){
 	  }
 	  (void)fscanf(classes, "%u\n", &nClasses);
 	  pLambdas = calloc(nClasses, sizeof(double));
-	  pNSummons = calloc(nClasses, sizeof(unsigned int));
+	  pNDevs = calloc(nClasses, sizeof(unsigned int));
 
 	  for(k = 0; k < nClasses; k++){
-	    (void)fscanf(classes, "%lf\t%u\n", pLambdas + k, pNSummons + k);
-	    nDevs += *(pNSummons + k);
+	    (void)fscanf(classes, "%lf\t%u\n", pLambdas + k, pNDevs + k);
+	    nDevs += *(pNDevs + k);
 	  }
 	}else{
 	  (void)puts("Argument error.");
@@ -88,16 +120,17 @@ int main(int argc, char *argv[]){
 	(void)puts(HELP);
 	return EXIT_SUCCESS;
       }
-/*      case('P'):{
-	if(atoi(argv[j + 1]) > 0){
-	  nPDevs = atoi(argv[j + 1]);
-	  j += 2;
-	  break;
-	}else{
-	  (void)puts("Can't put negative number of devs in parallel.");
-	  return EXIT_FAILURE;
-	}
-      }*/
+/*
+      case('B'):{
+	boost = 1;
+	nThreads = sysconf(_SC_NPROCESSORS_ONLN);
+	pThreads = calloc(nThreads, sizeof(pthread_t));
+	parameters = calloc(nThreads, sizeof(task));
+	pthread_attr_init(&threadAttr);
+	pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
+	break;
+      }
+*/
       default:{
 	(void)printf("Warning, unkown parameter met %c", i);
 	break;
@@ -115,28 +148,30 @@ int main(int argc, char *argv[]){
     (void)fclose(randInit);
   }
 
-  if(nClasses == 1){
+/*
+  if(nClasses == 1 && !boost){
     pLambdas = calloc(1, sizeof(double));
-    pNSummons = calloc(1, sizeof(unsigned int));
+    pNDevs = calloc(1, sizeof(unsigned int));
     *(pLambdas) = lambda;
-    *(pNSummons) = nDevs;
+    *(pNDevs) = nDevs;
   }
+*/
 
 #ifdef DEBUG
   (void)printf("Simulating %d devices.\n", nDevs);
   for(k = 0; k < nClasses; k++){
-    (void)printf("Class %d ..[λ = %1.3f ,N = %d]\n", k, *(pLambdas + k), *(pNSummons + k));
+    (void)printf("Class %d ..[λ = %1.3f ,N = %d]\n", k, *(pLambdas + k), *(pNDevs + k));
   }
 #endif
 
   devTimes = calloc(nDevs, sizeof(double));
 
   /* First period of life. */
-  i = *pNSummons;
+  i = *pNDevs;
 
   for(j = 0, k = 0; j < nDevs; j++){
     if(j > i){
-      i += *(pNSummons + k + 1);
+      i += *(pNDevs + k + 1);
       k++;
     }
     *(devTimes + j) = -(1.0/ *(pLambdas + k))*log((double)(RAND_MAX - rand())/(double)RAND_MAX);
@@ -150,15 +185,38 @@ int main(int argc, char *argv[]){
   }
   
   avgT /= nDevs;
+/*}else{
+    for(j = 0; j < nThreads; j++){
+      nPlacesLeft = (parameters + j)->totalSteps = nDevs/nThreads;
+      (parameters + j)->nClasses = nClasses;
+      for(i = 0; i < nClasses && placesLeft > 0; i++){
+	if(nPlacesLeft >= *(pNDevs + i)){
+	  nPlacesLeft -= *(pNDevs + i);
+	  nSims = *(pNDevs + i);
+	}else{
+	  nPlacesLeft = 0;
+	  nSims = nDevs/nThreads;
+	  *(pNDevs + i) -= nDevs/nThreads;
+	}
+	*((parameters + j)->(pStepsEach + i)) = nSims;
+      }
+      for(i = 0; i < nClasses; i++){
+	*((parameters + j)->pLambdas + i) = *(pLambdas + i);
+	*((parameters + j)->)
+      }
+    }
+  }*/
 
   (void)printf("Average operation time for first stage %f\n", avgT);
 
   histogram = fopen("histogram_furst.dat", "w");
 
+  (void)fprintf(histogram, "#__Time______R(t)______Lambda(t)\n");
+
   nSteps = STEPS;
 
   /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
+  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
     alive = 0;
     failFunc = 0;
     for(j = 0; j < nDevs; j++){
@@ -169,17 +227,19 @@ int main(int argc, char *argv[]){
 	}
       }
     }
-    (void)fprintf(histogram, "%f\t%f\t%f\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime));
+    if(alive > 500){
+      (void)fprintf(histogram, "%f\t%f\t%f\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime));
+    }
   }
 
   (void)fclose(histogram);
   maxTime = 0;
   /* Second period of life. */
-  i = *pNSummons;
+  i = *pNDevs;
 
   for(j = 0, nDevs = 0; j < nClasses; j++){
-    if(nDevs < *(pNSummons + j)){
-      nDevs = *(pNSummons + j);
+    if(nDevs < *(pNDevs + j)){
+      nDevs = *(pNDevs + j);
     }
   }
  
@@ -188,12 +248,12 @@ int main(int argc, char *argv[]){
 
   for(j = 0, k = 0; j < nDevs; j++){
     if(j > i){
-      i += *(pNSummons + k + 1);
+      i += *(pNDevs + k + 1);
       k++;
     }
     lambda = 0;
     for(l = 0; l < nClasses; l++){
-      if(*(pNSummons + l) > j){
+      if(*(pNDevs + l) > j){
         lambda += *(pLambdas + l);
       }
     }
@@ -216,7 +276,7 @@ int main(int argc, char *argv[]){
   nSteps = ceil(maxTime)*10.0;
 
   /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper < maxTime; stepper += maxTime/nSteps){
+  for(stepper = maxTime/nSteps; stepper < maxTime; stepper += maxTime/nSteps/10){
     alive = 0;
     failFunc = 0;
     for(j = 0; j < nDevs; j++){
@@ -227,11 +287,13 @@ int main(int argc, char *argv[]){
 	}
       }
     }
-    (void)fprintf(histogram, "%f\t%f\t%f\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime));
+    if(alive > 500){
+      (void)fprintf(histogram, "%f\t%f\t%f\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime));
+    }
   }
 
   (void)fclose(histogram);
-  (void)free(pNSummons);
+  (void)free(pNDevs);
   (void)free(pLambdas);
   (void)free(devTimes);
 
