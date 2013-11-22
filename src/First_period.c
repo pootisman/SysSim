@@ -9,69 +9,21 @@
 #define STEPS 100
 
 #define HELP "Help\nL <lambda>\nN <N of devices>"
-/*
-typedef struct task{
-  unsigned int totalSteps ,nClasses, *pStepsEach;
-  double *pLambdas, *stepArr, *Rt, *Lt;
-}task;
-*/
-/* Random seed and its mutex. */
-/*unsigned int cSeed = 0;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-*/
-/* Multithreaded modelling function.
-void *tester(void *args){
-  unsigned int i = 0, j = 0, k = 0, nSteps = 0;;
-  double rGen 0.0, maxTime = 0.0;
-  task *pTask = (task *)args;
 
-  for(i = 0; i < pTask->totalSteps; i++){
-    if(i <= *(pTask->pStepsEach + j)){
-      j++;
-    }
-    
-    (void)pthread_mutex_lock(&mutex);
-    *(pTask->pVect + i) = -(1.0/ *(pTask->pLambdas + j))log((double)(RAND_MAX - rand_r(&cSeed))/(double)RAND_MAX);
-    (void)pthread_mutex_unlock(&mutex);
+#define PARAL 1
+#define SEQUE 2
 
-    if(*(pTask->pVect + i) > maxTime){
-      maxTime = *(pTask->pVect + i);
-    }
-  }
-
-  nSteps = maxTime*10.0;
-  k = 0;
-
-  for(rGen = maxTime/nSteps; rGen < maxTime; rGen += maxTime/nSteps){
-    alive = 0;
-    failFunc = 0;
-    for(j = 0; j < nDevs; j++){
-      if(*(devTimes + j) >= stepper){
-	alive++;
-	if(*(devTimes + j) < (stepper + maxTime/nSteps)){
-	  failFunc++;
-	}
-      }
-    }
-    *(pTask->stepArr + k) = rGen;
-    *(pTask->Rt + k) = (double)alive/(double)(pTask->totalSteps);
-    *(pTask->Lt + k) = (double)failFunc/(double)*((double)nSteps/(double)maxTime);
-    ++k;
-  }
+typedef struct deviceBundle{
+  unsigned char nDevs, linkType;
+  double *pDevLambdas;
 }
-*/
 
 int main(int argc, char *argv[]){
   double *devTimes = NULL, *pLambdas = NULL, avgT = 0.0, stepper = 0.0, maxTime = 0.0, lambda = 0.0;
+  deviceBundle *pDevBundl = NULL;
   int i = 0;
-  unsigned int nDevs = 0, j = 1, l = 0, alive = 0, failFunc = 0, nClasses = 0, *pNDevs = NULL, k = 0, rander = 0, nSteps = 0/*, boost = 0*/;
+  unsigned long int nDevs = 0, j = 1, l = 0, alive = 0, failFunc = 0, nClasses = 0, *pNDevs = NULL, k = 0, rander = 0, nSteps = 0, *pNDevsTemp = NULL;
   FILE *histogram = NULL, *classes = NULL, *randInit = NULL;
-
-/*
-  pthread_t *pThreads = NULL;
-  pthread_attr_t threadAttr;
-  task *parameters = NULL;
-*/
 
   while((i = getopt(argc, argv, VALID_ARGS)) != -1){
     switch(i){
@@ -82,14 +34,16 @@ int main(int argc, char *argv[]){
 	    (void)puts("Unable to read class data, no file!");
 	    return EXIT_FAILURE;
 	  }
-	  (void)fscanf(classes, "%u\n", &nClasses);
+	  (void)fscanf(classes, "%Lu\n", &nClasses);
 	  pLambdas = calloc(nClasses, sizeof(double));
-	  pNDevs = calloc(nClasses, sizeof(unsigned int));
+	  pNDevs = calloc(nClasses, sizeof(unsigned long int));
 
 	  for(k = 0; k < nClasses; k++){
-	    (void)fscanf(classes, "%lf\t%u\n", pLambdas + k, pNDevs + k);
+	    (void)fscanf(classes, "%lf\t%Lu\n", pLambdas + k, pNDevs + k);
 	    nDevs += *(pNDevs + k);
 	  }
+
+	  (void)memcpy(pNDevsTemp, pNDevs, nClasses*sizeof(unsigned long int));
 	}else{
 	  (void)puts("Argument error.");
 	  return EXIT_FAILURE;
@@ -120,17 +74,6 @@ int main(int argc, char *argv[]){
 	(void)puts(HELP);
 	return EXIT_SUCCESS;
       }
-/*
-      case('B'):{
-	boost = 1;
-	nThreads = sysconf(_SC_NPROCESSORS_ONLN);
-	pThreads = calloc(nThreads, sizeof(pthread_t));
-	parameters = calloc(nThreads, sizeof(task));
-	pthread_attr_init(&threadAttr);
-	pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
-	break;
-      }
-*/
       default:{
 	(void)printf("Warning, unkown parameter met %c", i);
 	break;
@@ -143,24 +86,15 @@ int main(int argc, char *argv[]){
   if(!randInit){
     (void)puts("No urandom device.");
   }else{
-    (void)fread(&rander, 1 , sizeof(unsigned int), randInit);
+    (void)fread(&rander, 1 , sizeof(unsigned long int), randInit);
     (void)srand(rander);
     (void)fclose(randInit);
   }
 
-/*
-  if(nClasses == 1 && !boost){
-    pLambdas = calloc(1, sizeof(double));
-    pNDevs = calloc(1, sizeof(unsigned int));
-    *(pLambdas) = lambda;
-    *(pNDevs) = nDevs;
-  }
-*/
-
 #ifdef DEBUG
-  (void)printf("Simulating %d devices.\n", nDevs);
+  (void)printf("Simulating %Lu devices.\n", nDevs);
   for(k = 0; k < nClasses; k++){
-    (void)printf("Class %d ..[λ = %1.3f ,N = %d]\n", k, *(pLambdas + k), *(pNDevs + k));
+    (void)printf("Class %Lu ..[λ = %1.3f ,N = %Lu]\n", k, *(pLambdas + k), *(pNDevs + k));
   }
 #endif
 
@@ -185,27 +119,6 @@ int main(int argc, char *argv[]){
   }
   
   avgT /= nDevs;
-/*}else{
-    for(j = 0; j < nThreads; j++){
-      nPlacesLeft = (parameters + j)->totalSteps = nDevs/nThreads;
-      (parameters + j)->nClasses = nClasses;
-      for(i = 0; i < nClasses && placesLeft > 0; i++){
-	if(nPlacesLeft >= *(pNDevs + i)){
-	  nPlacesLeft -= *(pNDevs + i);
-	  nSims = *(pNDevs + i);
-	}else{
-	  nPlacesLeft = 0;
-	  nSims = nDevs/nThreads;
-	  *(pNDevs + i) -= nDevs/nThreads;
-	}
-	*((parameters + j)->(pStepsEach + i)) = nSims;
-      }
-      for(i = 0; i < nClasses; i++){
-	*((parameters + j)->pLambdas + i) = *(pLambdas + i);
-	*((parameters + j)->)
-      }
-    }
-  }*/
 
   (void)printf("Average operation time for first stage %f\n", avgT);
 
@@ -228,7 +141,7 @@ int main(int argc, char *argv[]){
       }
     }
     if(alive > 500){
-      (void)fprintf(histogram, "%f\t%f\t%f\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime));
+      (void)fprintf(histogram, "%f\t%f\t%f\t%Lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
     }
   }
 
@@ -244,52 +157,29 @@ int main(int argc, char *argv[]){
   }
  
   (void)free(devTimes);
-  devTimes = calloc(nDevs, sizeof(double));
+  pDevBundl = calloc( nDevs, sizeof(deviceBundle));
 
-  for(j = 0, k = 0; j < nDevs; j++){
-    if(j > i){
-      i += *(pNDevs + k + 1);
-      k++;
-    }
-    lambda = 0;
-    for(l = 0; l < nClasses; l++){
-      if(*(pNDevs + l) > j){
-        lambda += *(pLambdas + l);
+  i = 0;
+
+  while(i < nDevs){
+    for(j = 0; j < nClasses; j++){
+      if(*(pNDevsTemp + j) > 0){
+	*(pNDevsTemp + j)--;
+	(pDevBundl + i)->nDevs++;
+      }else{
+	j--;
+	k++;
       }
     }
-    *(devTimes + j) = -(1.0/lambda)*log((double)(RAND_MAX - rand())/(double)RAND_MAX);
-    avgT += *(devTimes + j);
-#ifdef DEBUG
-    (void)printf("%f\n", *(devTimes + j));
-#endif
-    if(*(devTimes + j) > maxTime){
-      maxTime = *(devTimes + j);
+
+    (pDevBundl + i)->pDevLambdas = calloc((pDevBundl + i)->nDevs, sizeof(double));
+    (void)memcpy(pNDevsTemp, pNDevs, nClasses*sizeof(unsigned long int));
+
+    for(j = 0; j < (pDevBundl + i)->nDevs; j++){
+	(pDevBundl + i)->(pDevLambdas + j) =  -(1.0/ *(pLambdas + j))*log((double)(RAND_MAX - rand())/(double)RAND_MAX);
     }
-  }
-  
-  avgT /= nDevs;
 
-  (void)printf("Average operation time for first stage %f\n", avgT);
-
-  histogram = fopen("histogram_secund.dat", "w");
-
-  nSteps = ceil(maxTime)*10.0;
-
-  /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper < maxTime; stepper += maxTime/nSteps/10){
-    alive = 0;
-    failFunc = 0;
-    for(j = 0; j < nDevs; j++){
-      if(*(devTimes + j) >= stepper){
-	alive++;
-	if(*(devTimes + j) < (stepper + maxTime/nSteps)){
-	  failFunc++;
-	}
-      }
-    }
-    if(alive > 500){
-      (void)fprintf(histogram, "%f\t%f\t%f\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime));
-    }
+    ++i;
   }
 
   (void)fclose(histogram);
