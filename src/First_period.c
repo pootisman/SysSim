@@ -4,21 +4,14 @@
 #include <math.h>
 #include <memory.h>
 
-#define VALID_ARGS "I:P:N:h"
+#define VALID_ARGS "I:N:h"
 
 #define STEPS 100
 
-#define HELP "Help\nL <lambda>\nN <N of devices>"
+#define HELP "Help\nI <Classes file>"
 
 #define PARAL 1
 #define SEQUE 2
-
-/*
-typedef struct deviceBundle{
-  unsigned char nDevs, linkType;
-  double *pDevTime;
-}deviceBundle;
-*/
 
 inline double generateTime(double *pLambdas, unsigned char nClasses, unsigned char connection){
   double retVal = 0.0, tmp1 = 0.0;
@@ -40,50 +33,17 @@ inline double generateTime(double *pLambdas, unsigned char nClasses, unsigned ch
     }
   }else if(connection == PARAL){
     for(i = 1; i < nClasses; i++){
-      tmp1 = -(1.0/ *(pLambdas + i))*log((double)rand()/(double)RAND_MAX);
-      if(tmp1 > retVal){
-        retVal = tmp1;
-      }
+      retVal += -(1.0/ *(pLambdas + i))*log((double)rand()/(double)RAND_MAX);
     }
   }
 
   return retVal;
 }
 
-/*
-char ded(deviceBundle *pBndl, double testTime){
-  unsigned int i = 0;
-
-  switch(pBndl->linkType){
-    case(1):{
-      for(i = 0; i < pBndl->nDevs; i++){
-	if(*(pBndl->pDevTime + i) > testTime){
-	  return 32;
-	}
-      }
-      return -32;
-    }
-    case(2):{
-      for(i = 0; i < pBndl->nDevs; i++){
-	if(*(pBndl->pDevTime + i) < testTime){
-	  return -32;
-	}
-      }
-      return 32;
-    }
-    default:{
-      (void)puts("Unknown mode detected.");
-      return 0;
-    }
-  }
-}
-*/
-
 int main(int argc, char *argv[]){
-  double *devTimes = NULL, *pLambdas = NULL, avgT = 0.0, stepper = 0.0, maxTime = 0.0;
-  deviceBundle *pDevBundl = NULL;
+  double *pDevTimes = NULL, *pLambdas = NULL, *pLVec = NULL, avgT = 0.0, stepper = 0.0, maxTime = 0.0;
   int i = 0;
-  unsigned long int nDevs = 0, j = 1, alive = 0, failFunc = 0, nClasses = 0, *pNDevs = NULL, k = 0, rander = 0, nSteps = 0, *pNDevsTemp = NULL;
+  unsigned long int *pNDevs = NULL, *pNDevsTemp = NULL, nDevs = 0, j = 1, alive = 0, failFunc = 0, nClasses = 0, k = 0, rander = 0, nSteps = 0;
   FILE *histogram = NULL, *classes = NULL, *randInit = NULL;
 
   while((i = getopt(argc, argv, VALID_ARGS)) != -1){
@@ -119,16 +79,6 @@ int main(int argc, char *argv[]){
 	}
 	break;
       }
-      case('N'):{
-	if(atoi(argv[j + 1]) > 0 && nDevs == 0){
-	  nDevs = atoi(argv[j + 1]);
-	  j += 2;
-	  break;
-	}else{
-	  (void)puts("Invalid number of devices to test.");
-	  return EXIT_FAILURE;
-	}
-      }
       case('h'):{
 	(void)puts(HELP);
 	return EXIT_SUCCESS;
@@ -158,7 +108,7 @@ int main(int argc, char *argv[]){
   }
 #endif
 
-  devTimes = calloc(nDevs, sizeof(double));
+  pDevTimes = calloc(nDevs, sizeof(double));
 
   /* First period of life. */
   i = *pNDevs;
@@ -168,13 +118,11 @@ int main(int argc, char *argv[]){
       i += *(pNDevs + k + 1);
       k++;
     }
-    *(devTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
-    avgT += *(devTimes + j);
-/*#ifdef DEBUG
-    (void)printf("%f\n", *(devTimes + j));
-#endif*/
-    if(*(devTimes + j) > maxTime){
-      maxTime = *(devTimes + j);
+    *(pDevTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
+    avgT += *(pDevTimes + j);
+    
+    if(*(pDevTimes + j) > maxTime){
+      maxTime = *(pDevTimes + j);
     }
   }
   
@@ -192,14 +140,14 @@ int main(int argc, char *argv[]){
   for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
     failFunc = alive = 0;
     for(j = 0; j < nDevs; j++){
-      if(*(devTimes + j) >= stepper){
+      if(*(pDevTimes + j) >= stepper){
 	alive++;
-	if(*(devTimes + j) < (stepper + maxTime/nSteps)){
+	if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
 	  failFunc++;
 	}
       }
     }
-    if(alive > 500){
+    if(alive > 10000){
       (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
     }
   }
@@ -211,6 +159,8 @@ int main(int argc, char *argv[]){
   /* ###################### */
   histogram = fopen("histogram_secund.dat", "w");
 
+  (void)memcpy(pNDevsTemp, pNDevs, sizeof(unsigned long int)*nClasses);
+
   i = *pNDevs;
 
   for(j = 0, nDevs = 0; j < nClasses; j++){
@@ -219,59 +169,129 @@ int main(int argc, char *argv[]){
     }
   }
  
-  (void)free(devTimes);
-  pDevBundl = calloc( nDevs, sizeof(deviceBundle));
-
   i = 0;
+
+  pLVec = calloc(nClasses, sizeof(double));
+
+  avgT = maxTime = 0.0;
 
   /* Prepare bundles for simulation. */
   while(i < nDevs){
+    k = 0;
+
     for(j = 0; j < nClasses; j++){
-      if(*(pNDevsTemp + j + k) > 0){
-	(*(pNDevsTemp + j + k))--;
-	(pDevBundl + i)->nDevs++;
-	k = 0;
-      }else{
-	j--;
+      if(*(pNDevsTemp + j) > 0){
+	(*(pNDevsTemp + j))--;
+	*(pLVec + k) = *(pLambdas + j);
 	k++;
       }
     }
 
-    (pDevBundl + i)->pDevTime = calloc((pDevBundl + i)->nDevs, sizeof(double));
-    (void)memcpy(pNDevsTemp, pNDevs, nClasses*sizeof(unsigned long int));
-
-    for(j = 0; j < (pDevBundl + i)->nDevs; j++){
-	*((pDevBundl + i)->pDevTime + j) =  -(1.0/ *(pLambdas + j))*log((double)(RAND_MAX - rand())/(double)RAND_MAX);
+    *(pDevTimes + i) = generateTime(pLVec, k, SEQUE);
+    avgT += *(pDevTimes + i);
+    
+    if(*(pDevTimes + i) > maxTime){
+      maxTime = *(pDevTimes + i);
     }
-
-    (pDevBundl + i)->linkType = SEQUE;
-
+ 
     ++i;
   }
 
   /* Simulating  */
-  for(stepper = maxTime/STEPS; stepper <= maxTime*4; stepper += maxTime/STEPS){
+  avgT /= nDevs;
 
-    alive = failFunc = 0;
+  (void)printf("Average operation time for second stage %f\n", avgT);
 
-    for(i = 0; i < nDevs; i++){
-      if(!ded(pDevBundl + i, stepper)){
+  (void)fprintf(histogram, "#__Time______R(t)______Lambda(t)\n");
+
+  nSteps = STEPS;
+
+  /* Calculate R(t) and Lambda(t) */
+  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
+    failFunc = alive = 0;
+    for(j = 0; j < nDevs; j++){
+      if(*(pDevTimes + j) >= stepper){
 	alive++;
-	if(ded(pDevBundl + i, stepper + maxTime/STEPS)){
+	if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
 	  failFunc++;
 	}
       }
     }
-    if(alive > 500){
+    if(alive > 10000){
       (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
     }
   }
 
-  for(i = 0; i < nDevs; i++){
-    (void)free((pDevBundl + i)->pDevTime);
+  (void)fclose(histogram);
+
+  /* ##################### */
+  /* Third period of life. */
+  /* ##################### */
+  histogram = fopen("histogram_thurd.dat", "w");
+
+  (void)memcpy(pNDevsTemp, pNDevs, sizeof(unsigned long int)*nClasses);
+
+  i = *pNDevs;
+
+  for(j = 0, nDevs = 0; j < nClasses; j++){
+    if(nDevs < *(pNDevs + j)){
+      nDevs = *(pNDevs + j);
+    }
+  }
+ 
+  i = 0;
+
+  avgT = maxTime = 0.0;
+
+  /* Prepare bundles for simulation. */
+  while(i < nDevs){
+    k = 0;
+
+    for(j = 0; j < nClasses; j++){
+      if(*(pNDevsTemp + j) > 0){
+	(*(pNDevsTemp + j))--;
+	*(pLVec + k) = *(pLambdas + j);
+	k++;
+      }
+    }
+
+    *(pDevTimes + i) = generateTime(pLVec, k, PARAL);
+    avgT += *(pDevTimes + i);
+    
+    if(*(pDevTimes + i) > maxTime){
+      maxTime = *(pDevTimes + i);
+    }
+ 
+    ++i;
   }
 
-  (void)free(pDevBundl);
+  /* Simulating  */
+  avgT /= nDevs;
+
+  (void)printf("Average operation time for third stage %f\n", avgT);
+
+  (void)fprintf(histogram, "#__Time______R(t)______Lambda(t)\n");
+
+  nSteps = STEPS;
+
+  /* Calculate R(t) and Lambda(t) */
+  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
+    failFunc = alive = 0;
+    for(j = 0; j < nDevs; j++){
+      if(*(pDevTimes + j) >= stepper){
+	alive++;
+	if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
+	  failFunc++;
+	}
+      }
+    }
+    if(alive > 10000){
+      (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+    }
+  }
+
+  (void)free(pLVec);
+  (void)free(pDevTimes);
   (void)fclose(histogram);
   (void)free(pNDevs);
   (void)free(pLambdas);
