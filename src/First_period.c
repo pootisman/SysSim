@@ -6,12 +6,15 @@
 
 #define VALID_ARGS "I:N:h"
 
-#define STEPS 100
+#define STEPS 10000
 
-#define HELP "Help\nI <Classes file>"
+#define HELP "Help\n-I <Classes file>\nClass file format:\n<# of device classes>\n<Class lambda>\t<Amount of devices in class>"
 
 #define PARAL 1
 #define SEQUE 2
+#define STABLE 10000
+
+double prevPcnt = 0.0;
 
 inline double generateTime(double *pLambdas, unsigned char nClasses, unsigned char connection){
   double retVal = 0.0, tmp1 = 0.0;
@@ -38,6 +41,32 @@ inline double generateTime(double *pLambdas, unsigned char nClasses, unsigned ch
   }
 
   return retVal;
+}
+
+void printPrcnt(double prcnt, double minDelta, unsigned int barlen){
+  unsigned int i = 0;
+  
+  if(barlen == 0 || fabs(prcnt - prevPcnt) < minDelta){
+    return;
+  }
+  
+  prevPcnt = prcnt;
+  
+  (void)printf("[%3.1f%%][", prcnt);
+
+  for(i = 0; i < barlen*(prcnt/100.0); i++){
+    (void)printf("=");
+  }
+
+  for(;i < barlen; i++){
+    (void)printf(" ");
+  }
+
+  (void)printf("]");
+
+  (void)printf("\r");
+  
+  (void)fflush(stdout);
 }
 
 int main(int argc, char *argv[]){
@@ -114,16 +143,20 @@ int main(int argc, char *argv[]){
   i = *pNDevs;
 
   for(j = 0, k = 0; j < nDevs; j++){
+    
     if(j > i){
       i += *(pNDevs + k + 1);
       k++;
     }
+    
     *(pDevTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
     avgT += *(pDevTimes + j);
     
     if(*(pDevTimes + j) > maxTime){
       maxTime = *(pDevTimes + j);
     }
+    
+    (void)printPrcnt((double)j/(double)nDevs*100.0, 0.1, 20);
   }
   
   avgT /= nDevs;
@@ -137,7 +170,7 @@ int main(int argc, char *argv[]){
   nSteps = STEPS;
 
   /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
+  for(stepper = 0; stepper <= maxTime; stepper += maxTime/nSteps){
     failFunc = alive = 0;
     for(j = 0; j < nDevs; j++){
       if(*(pDevTimes + j) >= stepper){
@@ -147,7 +180,8 @@ int main(int argc, char *argv[]){
 	}
       }
     }
-    if(alive > 10000){
+    (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
+    if(alive > STABLE){
       (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
     }
   }
@@ -195,6 +229,7 @@ int main(int argc, char *argv[]){
     }
  
     ++i;
+    (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
   }
 
   /* Simulating  */
@@ -207,7 +242,7 @@ int main(int argc, char *argv[]){
   nSteps = STEPS;
 
   /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
+  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
     failFunc = alive = 0;
     for(j = 0; j < nDevs; j++){
       if(*(pDevTimes + j) >= stepper){
@@ -217,7 +252,9 @@ int main(int argc, char *argv[]){
 	}
       }
     }
-    if(alive > 10000){
+    (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
+
+    if(alive > STABLE){
       (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
     }
   }
@@ -263,6 +300,7 @@ int main(int argc, char *argv[]){
     }
  
     ++i;
+    (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
   }
 
   /* Simulating  */
@@ -275,7 +313,7 @@ int main(int argc, char *argv[]){
   nSteps = STEPS;
 
   /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps/10){
+  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
     failFunc = alive = 0;
     for(j = 0; j < nDevs; j++){
       if(*(pDevTimes + j) >= stepper){
@@ -285,7 +323,9 @@ int main(int argc, char *argv[]){
 	}
       }
     }
-    if(alive > 10000){
+    (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
+
+    if(alive > STABLE){
       (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
     }
   }
