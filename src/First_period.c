@@ -9,7 +9,7 @@
 #include <pthread.h>
 #endif
 
-#define VALID_ARGS "I:N:h"
+#define VALID_ARGS "R:I:N:h"
 
 #define STEPS 10000
 
@@ -21,7 +21,7 @@
 
 #ifdef THREADS
 typedef struct THRD_ARG{
-  unsigned long int startIndx, nDevs;
+  unsigned long int startIndx, nDevs, stopIndx;
   double stepper, stopTime, step;
   double *pFailFuncs, *pAlives;
   double *pDevTimes;
@@ -93,13 +93,13 @@ void *threadedMonitor(void *args){
     (void)pthread_exit(NULL);
   }
   
-  for(i = pArgs->startIndx; pArgs->stepper <= pArgs->stopTime; pArgs->stepper += pArgs->step, i++){
+  for(i = pArgs->startIndx; pArgs->stepper < pArgs->stopTime && i < pArgs->stopIndx; pArgs->stepper += pArgs->step, i++){
     *(pArgs->pFailFuncs + i) = *(pArgs->pAlives + i) = 0;
     for(j = 0; j < pArgs->nDevs; j++){
       if(*(pArgs->pDevTimes + j) >= pArgs->stepper){
 	*(pArgs->pAlives + i)+=1.0;
 	if(*(pArgs->pDevTimes + j) < (pArgs->stepper + pArgs->step)){
-	  *(pArgs->pFailFuncs + i)+=1.0;;
+	  *(pArgs->pFailFuncs + i)+=1.0;
 	}
       }
     }
@@ -109,17 +109,20 @@ void *threadedMonitor(void *args){
 #endif
 
 int main(int argc, char *argv[]){
-  double *pDevTimes = NULL, *pLambdas = NULL, *pLVec = NULL, avgT = 0.0, stepper = 0.0, maxTime = 0.0;
+  double *pDevTimes = NULL, *pLambdas = NULL, *pLVec = NULL, avgT = 0.0, maxTime = 0.0;
   int i = 0;
-  unsigned long int *pNDevs = NULL, *pNDevsTemp = NULL, nDevs = 0, j = 1, alive = 0, failFunc = 0, nClasses = 0, k = 0, rander = 0, nSteps = 0;
+  unsigned long int *pNDevs = NULL, *pNDevsTemp = NULL, nDevs = 0, j = 1, nClasses = 0, k = 0, rander = 0, nSteps = 0;
   FILE *histogram = NULL, *classes = NULL, *randInit = NULL;
   
 #ifdef THREADS
-  double *pAlives = NULL, *pFailFuncs = NULL;
-  unsigned long int nThreads = 1;
+  double *pAlives = NULL, *pFailFuncs = NULL, *pAlivesA[3] = {NULL}, *pFailFuncA[3] = {NULL}, maxTime1 = 0.0, maxTime2 = 0.0, maxTime3 = 0.0;
+  unsigned long int nThreads = 1, l = 0, nRestarts = 0, nDevs1 = 0, nDevs2 = 0, nDevs3 = 0;
   THRD_ARG *pThrdParams = NULL;
   pthread_t *pThreads = NULL;
   pthread_attr_t threadAttr;
+#else
+  unsigned long int failFunc = 0, alive = 0;
+  double stepper = 0.0;
 #endif
   
   while((i = getopt(argc, argv, VALID_ARGS)) != -1){
@@ -149,10 +152,23 @@ int main(int argc, char *argv[]){
 	  }
 
 	  (void)memcpy(pNDevsTemp, pNDevs, nClasses*sizeof(unsigned long int));
+	  j++;
+	  (void)fclose(classes);
 	}else{
 	  (void)puts("Argument error.");
 	  return EXIT_FAILURE;
 	}
+	break;
+      }
+      case('R'):{
+#ifdef THREADS
+	if(argv[j + 1]){
+	  nRestarts = atoi(argv[j + 1]);
+	}
+	j++;
+#else
+	(void)puts("Error, only in threaded program.");
+#endif
 	break;
       }
       case('h'):{
@@ -164,6 +180,7 @@ int main(int argc, char *argv[]){
 	break;
       }
     }
+    j++;
   }
 
   randInit = fopen("/dev/urandom", "rb");
@@ -180,7 +197,7 @@ int main(int argc, char *argv[]){
 #ifdef THREADS
   nThreads = sysconf(_SC_NPROCESSORS_ONLN);
   pThrdParams = calloc(nThreads, sizeof(THRD_ARG));
-  pThreads = calloc(nThreads, sizeof(THRD_ARG));
+  pThreads = calloc(nThreads, sizeof(pthread_t));
 #endif
   
 #ifdef DEBUG
@@ -194,308 +211,345 @@ int main(int argc, char *argv[]){
 #endif
 
   pDevTimes = calloc(nDevs, sizeof(double));
+  nSteps = STEPS;
 
-  /* First period of life. */
-  i = *pNDevs;
-
-  for(j = 0, k = 0; j < nDevs; j++){
-    
-    if(j > i){
-      i += *(pNDevs + k + 1);
-      k++;
-    }
-    
-    *(pDevTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
-    avgT += *(pDevTimes + j);
-    
-    if(*(pDevTimes + j) > maxTime){
-      maxTime = *(pDevTimes + j);
-    }
-    
-    (void)printPrcnt((double)j/(double)nDevs*100.0, 0.1, 20);
+#ifdef THREADS
+  for(k = 0; k < 3; k++){
+    pAlivesA[k] = calloc(nSteps, sizeof(double));
+    pFailFuncA[k] = calloc(nSteps, sizeof(double));
   }
+
+  for(l = 0; l < nRestarts; l++){
+#endif
+/* First period of life. */
+    i = *pNDevs;
+
+    for(j = 0, k = 0; j < nDevs; j++){
+    
+      if(j > i){
+        i += *(pNDevs + k + 1);
+        k++;
+      }
+    
+      *(pDevTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
+      avgT += *(pDevTimes + j);
+    
+      if(*(pDevTimes + j) > maxTime){
+        maxTime = *(pDevTimes + j);
+      }
+    
+      (void)printPrcnt((double)j/(double)nDevs*100.0, 0.1, 20);
+    }
   
-  avgT /= nDevs;
+    avgT /= nDevs;
 
-  (void)printf("Average operation time for first stage %f\n", avgT);
+    (void)printf("Average operation time for first stage %f\n", avgT);
 
+    nSteps = STEPS;
+
+/* Calculate R(t) and Lambda(t) */
+#ifndef THREADS
+    for(stepper = 0; stepper <= maxTime; stepper += maxTime/nSteps){
+      failFunc = alive = 0;
+      for(j = 0; j < nDevs; j++){
+        if(*(pDevTimes + j) >= stepper){
+	  alive++;
+  	  if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
+	    failFunc++;
+  	  }
+        }
+      }
+      (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
+      if(alive > STABLE){
+        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+      }
+    }
+#else
+    nDevs1 = nDevs;
+    maxTime1 = maxTime;
+    pAlives = calloc(nSteps, sizeof(double));
+    pFailFuncs = calloc(nSteps, sizeof(double));
+    pthread_attr_init(&threadAttr);
+    pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
+  
+    for(i = 0; i < nThreads; i++){
+      (pThrdParams + i)->stopIndx = nSteps/nThreads * (i+1);
+      (pThrdParams + i)->startIndx = nSteps/nThreads * i;
+      (pThrdParams + i)->stepper = maxTime1/nThreads * i;
+      (pThrdParams + i)->nDevs = nDevs1;
+      (pThrdParams + i)->pDevTimes = pDevTimes;
+      (pThrdParams + i)->pAlives = pAlives;
+      (pThrdParams + i)->pFailFuncs = pFailFuncs;
+      (pThrdParams + i)->stopTime = maxTime1/nThreads * (i+1);
+      (pThrdParams + i)->step = maxTime1/nSteps;
+    }
+ 
+    for(i = 0; i < nThreads; i++){
+      pthread_create((pThreads + i), &threadAttr, threadedMonitor, (void *)(pThrdParams + i));
+    }
+ 
+    pthread_attr_destroy(&threadAttr);
+  
+    for(i = 0; i < nThreads; i++){
+      pthread_join(*(pThreads + i), NULL);
+    }
+  
+    for(i = 0; i < nSteps && *(pAlives + i) > STABLE; i++){
+      *(pAlivesA[0] + i) += *(pAlives + i);
+      *(pFailFuncA[0] + i) += *(pFailFuncs + i);
+    }
+  
+    (void)free(pAlives);
+    (void)free(pFailFuncs);
+
+#endif
+
+/* ###################### */
+/* Second period of life. */
+/* ###################### */
+
+    (void)memcpy(pNDevsTemp, pNDevs, sizeof(unsigned long int)*nClasses);
+
+    i = *pNDevs;
+
+    for(j = 0, nDevs = 0; j < nClasses; j++){
+      if(nDevs < *(pNDevs + j)){
+        nDevs = *(pNDevs + j);
+      }
+    }
+
+    i = 0;
+
+    pLVec = calloc(nClasses, sizeof(double));
+
+    avgT = maxTime = 0.0;
+
+/* Prepare bundles for simulation. */
+    while(i < nDevs){
+      k = 0;
+
+      for(j = 0; j < nClasses; j++){
+        if(*(pNDevsTemp + j) > 0){
+	  (*(pNDevsTemp + j))--;
+	  *(pLVec + k) = *(pLambdas + j);
+	  k++;
+        }
+      }
+
+      *(pDevTimes + i) = generateTime(pLVec, k, SEQUE);
+      avgT += *(pDevTimes + i);
+    
+      if(*(pDevTimes + i) > maxTime){
+        maxTime = *(pDevTimes + i);
+      }
+ 
+      ++i;
+      (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
+    }
+
+/* Simulating  */
+    avgT /= nDevs;
+
+    (void)printf("Average operation time for second stage %f\n", avgT);
+
+    nSteps = STEPS;
+
+#ifndef THREADS
+/* Calculate R(t) and Lambda(t) */
+    for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
+      failFunc = alive = 0;
+      for(j = 0; j < nDevs; j++){
+        if(*(pDevTimes + j) >= stepper){
+	  alive++;
+	  if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
+	    failFunc++;
+	  }
+        }
+      }
+      (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
+
+      if(alive > STABLE){
+        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+      }
+    }
+#else
+    nDevs2 = nDevs;
+    maxTime2 = maxTime;
+    pAlives = calloc(nSteps, sizeof(double));
+    pFailFuncs = calloc(nSteps, sizeof(double));
+    pthread_attr_init(&threadAttr);
+    pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
+  
+    for(i = 0; i < nThreads; i++){
+      (pThrdParams + i)->stopIndx = nSteps/nThreads * (i+1);
+      (pThrdParams + i)->startIndx = nSteps/nThreads * i;
+      (pThrdParams + i)->stepper = maxTime2/nThreads * i;
+      (pThrdParams + i)->nDevs = nDevs2;
+      (pThrdParams + i)->pDevTimes = pDevTimes;
+      (pThrdParams + i)->pAlives = pAlives;
+      (pThrdParams + i)->pFailFuncs = pFailFuncs;
+      (pThrdParams + i)->stopTime = maxTime2/nThreads * (i+1);
+      (pThrdParams + i)->step = maxTime2/nSteps;
+    }
+  
+    for(i = 0; i < nThreads; i++){
+      pthread_create((pThreads + i), &threadAttr, threadedMonitor, (void *)(pThrdParams + i));
+    }  
+
+    pthread_attr_destroy(&threadAttr);
+  
+    for(i = 0; i < nThreads; i++){
+      pthread_join(*(pThreads+i), NULL);
+    }
+  
+    for(i = 0; i < nSteps && *(pAlives + i) > STABLE; i++){
+      *(pAlivesA[1] + i) += *(pAlives + i);
+      *(pFailFuncA[1] + i) += *(pFailFuncs + i);
+    }
+  
+    (void)free(pAlives);
+    (void)free(pFailFuncs);
+#endif
+
+/* ##################### */
+/* Third period of life. */
+/* ##################### */
+
+    (void)memcpy(pNDevsTemp, pNDevs, sizeof(unsigned long int)*nClasses);
+
+    i = *pNDevs;
+
+    for(j = 0, nDevs = 0; j < nClasses; j++){
+      if(nDevs < *(pNDevs + j)){
+        nDevs = *(pNDevs + j);
+      }
+    }
+ 
+    i = 0;
+
+    avgT = maxTime = 0.0;
+
+/* Prepare bundles for simulation. */
+    while(i < nDevs){
+      k = 0;
+
+      for(j = 0; j < nClasses; j++){
+        if(*(pNDevsTemp + j) > 0){
+  	  (*(pNDevsTemp + j))--;
+	  *(pLVec + k) = *(pLambdas + j);
+	  k++;
+        }
+      }
+
+      *(pDevTimes + i) = generateTime(pLVec, k, PARAL);
+      avgT += *(pDevTimes + i);
+    
+      if(*(pDevTimes + i) > maxTime){
+        maxTime = *(pDevTimes + i);
+      }
+ 
+      ++i;
+      (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
+    }
+
+/* Simulating  */
+    avgT /= nDevs;
+
+    (void)printf("Average operation time for third stage %f\n", avgT);
+
+    nSteps = STEPS;
+
+#ifndef THREADS
+/* Calculate R(t) and Lambda(t) */
+    for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
+      failFunc = alive = 0;
+      for(j = 0; j < nDevs; j++){
+        if(*(pDevTimes + j) >= stepper){
+	  alive++;
+	  if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
+	    failFunc++;
+	  }
+        }
+      }
+      (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
+
+      if(alive > STABLE){
+        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+      }
+    }
+#else
+    nDevs3 = nDevs;
+    maxTime3 = maxTime;
+    pAlives = calloc(nSteps, sizeof(double));
+    pFailFuncs = calloc(nSteps, sizeof(double));
+    pthread_attr_init(&threadAttr);
+    pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
+  
+    for(i = 0; i < nThreads; i++){
+      (pThrdParams + i)->stopIndx = nSteps/nThreads * (i+1);
+      (pThrdParams + i)->startIndx = nSteps/nThreads * i;
+      (pThrdParams + i)->stepper = maxTime3/nThreads * i;
+      (pThrdParams + i)->nDevs = nDevs3;
+      (pThrdParams + i)->pDevTimes = pDevTimes;
+      (pThrdParams + i)->pAlives = pAlives;
+      (pThrdParams + i)->pFailFuncs = pFailFuncs;
+      (pThrdParams + i)->stopTime = maxTime3/nThreads * (i+1);
+      (pThrdParams + i)->step = maxTime3/nSteps;
+    }
+  
+    for(i = 0; i < nThreads; i++){
+      pthread_create((pThreads + i), &threadAttr, threadedMonitor, (void *)(pThrdParams + i));
+    }
+  
+    pthread_attr_destroy(&threadAttr);
+  
+    for(i = 0; i < nThreads; i++){
+      pthread_join(*(pThreads+i), NULL);
+    }
+ 
+    for(i = 0; i < nSteps && *(pAlives + i) > STABLE; i++){
+      *(pAlivesA[2] + i) += *(pAlives + i);
+      *(pFailFuncA[2] + i) += *(pFailFuncs + i);
+    }
+    
+    (void)free(pAlives);
+    (void)free(pFailFuncs);
+  }
+ 
   histogram = fopen("histogram_furst.dat", "w");
 
-  (void)fprintf(histogram, "#__Time______R(t)______Lambda(t)\n");
-
-  nSteps = STEPS;
-
-  /* Calculate R(t) and Lambda(t) */
-#ifndef THREADS
-  for(stepper = 0; stepper <= maxTime; stepper += maxTime/nSteps){
-    failFunc = alive = 0;
-    for(j = 0; j < nDevs; j++){
-      if(*(pDevTimes + j) >= stepper){
-	alive++;
-	if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
-	  failFunc++;
-	}
-      }
-    }
-    (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
-    if(alive > STABLE){
-      (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
-    }
-  }
-#else
-  pAlives = calloc(nSteps, sizeof(double));
-  pFailFuncs = calloc(nSteps, sizeof(double));
-  pthread_attr_init(&threadAttr);
-  pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
-  
-  for(i = 0; i < nThreads; i++){
-    (pThrdParams + i)->startIndx = nSteps/nThreads * i;
-    (pThrdParams + i)->stepper = maxTime/nThreads * i;
-    (pThrdParams + i)->nDevs = nDevs;
-    (pThrdParams + i)->pDevTimes = pDevTimes;
-    (pThrdParams + i)->pAlives = pAlives/* + (nSteps/nThreads*i)*/;
-    (pThrdParams + i)->pFailFuncs = pFailFuncs/* + (nSteps/nThreads*i)*/;
-    (pThrdParams + i)->stopTime = maxTime/nThreads * (i+1);
-    (pThrdParams + i)->step = maxTime/nSteps;
-  }
- 
-  for(i = 0; i < nThreads; i++){
-    pthread_create((pThreads + i), &threadAttr, threadedMonitor, (void *)(pThrdParams + i));
-  }
- 
-  pthread_attr_destroy(&threadAttr);
-  
-  for(i = 0; i < nThreads; i++){
-    pthread_join(*(pThreads+i), NULL);
+  for(i = 0; i < nSteps; i++){
+    (void)fprintf(histogram, "%f\t%f\t%f\t%f\n", maxTime1/nSteps*i, (double)*(pAlivesA[0] + i)/nRestarts/(double)nDevs1, ((double)*(pFailFuncA[0] + i)/nRestarts/(double)*(pAlivesA[0] + i)/nRestarts)*((double)nSteps/(double)maxTime1), *(pAlivesA[0] + i)/nRestarts);
   }
   
-  for(i = 0; i < nSteps && *(pAlives + i) > STABLE; i++){
-    (void)fprintf(histogram, "%f\t%f\t%f\t%f\n", maxTime/nSteps*i, (double)*(pAlives + i)/(double)nDevs, ((double)*(pFailFuncs + i)/(double)*(pAlives + i))*((double)nSteps/(double)maxTime), *(pAlives + i));
-  }
-  
-  (void)free(pAlives);
-  (void)free(pFailFuncs);
-#endif
   (void)fclose(histogram);
-
-  /* ###################### */
-  /* Second period of life. */
-  /* ###################### */
   histogram = fopen("histogram_secund.dat", "w");
 
-  (void)memcpy(pNDevsTemp, pNDevs, sizeof(unsigned long int)*nClasses);
-
-  i = *pNDevs;
-
-  for(j = 0, nDevs = 0; j < nClasses; j++){
-    if(nDevs < *(pNDevs + j)){
-      nDevs = *(pNDevs + j);
-    }
-  }
- 
-  i = 0;
-
-  pLVec = calloc(nClasses, sizeof(double));
-
-  avgT = maxTime = 0.0;
-
-  /* Prepare bundles for simulation. */
-  while(i < nDevs){
-    k = 0;
-
-    for(j = 0; j < nClasses; j++){
-      if(*(pNDevsTemp + j) > 0){
-	(*(pNDevsTemp + j))--;
-	*(pLVec + k) = *(pLambdas + j);
-	k++;
-      }
-    }
-
-    *(pDevTimes + i) = generateTime(pLVec, k, SEQUE);
-    avgT += *(pDevTimes + i);
-    
-    if(*(pDevTimes + i) > maxTime){
-      maxTime = *(pDevTimes + i);
-    }
- 
-    ++i;
-    (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
+  for(i = 0; i < nSteps; i++){
+    (void)fprintf(histogram, "%f\t%f\t%f\t%f\n", maxTime2/nSteps*i, (double)*(pAlivesA[1] + i)/nRestarts/(double)nDevs2, ((double)*(pFailFuncA[1] + i)/nRestarts/(double)*(pAlivesA[1] + i)/nRestarts)*((double)nSteps/(double)maxTime2), *(pAlivesA[1] + i)/nRestarts);
   }
 
-  /* Simulating  */
-  avgT /= nDevs;
-
-  (void)printf("Average operation time for second stage %f\n", avgT);
-
-  (void)fprintf(histogram, "#__Time______R(t)______Lambda(t)\n");
-
-  nSteps = STEPS;
-
-#ifndef THREADS
-  /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
-    failFunc = alive = 0;
-    for(j = 0; j < nDevs; j++){
-      if(*(pDevTimes + j) >= stepper){
-	alive++;
-	if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
-	  failFunc++;
-	}
-      }
-    }
-    (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
-
-    if(alive > STABLE){
-      (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
-    }
-  }
-#else
-  pAlives = calloc(nSteps, sizeof(double));
-  pFailFuncs = calloc(nSteps, sizeof(double));
-  pthread_attr_init(&threadAttr);
-  pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
-  
-  for(i = 0; i < nThreads; i++){
-    (pThrdParams + i)->startIndx = nSteps/nThreads * i;
-    (pThrdParams + i)->stepper = maxTime/nThreads * i;
-    (pThrdParams + i)->nDevs = nDevs;
-    (pThrdParams + i)->pDevTimes = pDevTimes;
-    (pThrdParams + i)->pAlives = pAlives/* + (nSteps/nThreads*i)*/;
-    (pThrdParams + i)->pFailFuncs = pFailFuncs/* + (nSteps/nThreads*i)*/;
-    (pThrdParams + i)->stopTime = maxTime/nThreads * (i+1);
-    (pThrdParams + i)->step = maxTime/nSteps;
-  }
-  
-  for(i = 0; i < nThreads; i++){
-    pthread_create((pThreads + i), &threadAttr, threadedMonitor, (void *)(pThrdParams + i));
-  }
-
-  pthread_attr_destroy(&threadAttr);
-  
-  for(i = 0; i < nThreads; i++){
-    pthread_join(*(pThreads+i), NULL);
-  }
-  
-  for(i = 0; i < nSteps && *(pAlives + i) > STABLE; i++){
-    (void)fprintf(histogram, "%f\t%f\t%f\t%f\n", maxTime/nSteps*i, (double)*(pAlives + i)/(double)nDevs, ((double)*(pFailFuncs + i)/(double)*(pAlives + i))*((double)nSteps/(double)maxTime), *(pAlives + i));
-  }
-  
-  (void)free(pAlives);
-  (void)free(pFailFuncs);
-#endif
   (void)fclose(histogram);
-
-  /* ##################### */
-  /* Third period of life. */
-  /* ##################### */
   histogram = fopen("histogram_thurd.dat", "w");
 
-  (void)memcpy(pNDevsTemp, pNDevs, sizeof(unsigned long int)*nClasses);
-
-  i = *pNDevs;
-
-  for(j = 0, nDevs = 0; j < nClasses; j++){
-    if(nDevs < *(pNDevs + j)){
-      nDevs = *(pNDevs + j);
-    }
-  }
- 
-  i = 0;
-
-  avgT = maxTime = 0.0;
-
-  /* Prepare bundles for simulation. */
-  while(i < nDevs){
-    k = 0;
-
-    for(j = 0; j < nClasses; j++){
-      if(*(pNDevsTemp + j) > 0){
-	(*(pNDevsTemp + j))--;
-	*(pLVec + k) = *(pLambdas + j);
-	k++;
-      }
-    }
-
-    *(pDevTimes + i) = generateTime(pLVec, k, PARAL);
-    avgT += *(pDevTimes + i);
-    
-    if(*(pDevTimes + i) > maxTime){
-      maxTime = *(pDevTimes + i);
-    }
- 
-    ++i;
-    (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
+  for(i = 0; i < nSteps; i++){
+    (void)fprintf(histogram, "%f\t%f\t%f\t%f\n", maxTime3/nSteps*i, (double)*(pAlivesA[2] + i)/nRestarts/(double)nDevs3, ((double)*(pFailFuncA[2] + i)/nRestarts/(double)*(pAlivesA[2] + i)/nRestarts)*((double)nSteps/(double)maxTime3), *(pAlivesA[2] + i)/nRestarts);
   }
 
-  /* Simulating  */
-  avgT /= nDevs;
-
-  (void)printf("Average operation time for third stage %f\n", avgT);
-
-  (void)fprintf(histogram, "#__Time______R(t)______Lambda(t)\n");
-
-  nSteps = STEPS;
-
-#ifndef THREADS
-  /* Calculate R(t) and Lambda(t) */
-  for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
-    failFunc = alive = 0;
-    for(j = 0; j < nDevs; j++){
-      if(*(pDevTimes + j) >= stepper){
-	alive++;
-	if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
-	  failFunc++;
-	}
-      }
-    }
-    (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
-
-    if(alive > STABLE){
-      (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
-    }
-  }
-#else
-  pAlives = calloc(nSteps, sizeof(double));
-  pFailFuncs = calloc(nSteps, sizeof(double));
-  pthread_attr_init(&threadAttr);
-  pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
-  
-  for(i = 0; i < nThreads; i++){
-    (pThrdParams + i)->startIndx = nSteps/nThreads * i;
-    (pThrdParams + i)->stepper = maxTime/nThreads * i;
-    (pThrdParams + i)->nDevs = nDevs;
-    (pThrdParams + i)->pDevTimes = pDevTimes;
-    (pThrdParams + i)->pAlives = pAlives;
-    (pThrdParams + i)->pFailFuncs = pFailFuncs;
-    (pThrdParams + i)->stopTime = maxTime/nThreads * (i+1);
-    (pThrdParams + i)->step = maxTime/nSteps;
-  }
-  
-  for(i = 0; i < nThreads; i++){
-    pthread_create((pThreads + i), &threadAttr, threadedMonitor, (void *)(pThrdParams + i));
-  }
-  
-  pthread_attr_destroy(&threadAttr);
-  
-  for(i = 0; i < nThreads; i++){
-    pthread_join(*(pThreads+i), NULL);
-  }
-  
-  for(i = 0; i < nSteps && *(pAlives + i) > STABLE; i++){
-    (void)fprintf(histogram, "%f\t%f\t%f\t%f\n", maxTime/nSteps*i, (double)*(pAlives + i)/(double)nDevs, ((double)*(pFailFuncs + i)/(double)*(pAlives + i))*((double)nSteps/(double)maxTime), *(pAlives + i));
-  }
-  
-  (void)free(pAlives);
-  (void)free(pFailFuncs);
-#endif
-#ifdef THREADS
   (void)free(pThreads);
   (void)free(pThrdParams);
+  (void)free(pAlivesA[0]);
+  (void)free(pFailFuncA[0]);
+  (void)free(pAlivesA[1]);
+  (void)free(pFailFuncA[1]);
+  (void)free(pAlivesA[2]);
+  (void)free(pFailFuncA[2]);
 #endif
   (void)free(pLVec);
   (void)free(pDevTimes);
   (void)fclose(histogram);
   (void)free(pNDevs);
+  (void)free(pNDevsTemp);
   (void)free(pLambdas);
 
   return EXIT_SUCCESS;
