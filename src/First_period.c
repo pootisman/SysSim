@@ -108,15 +108,33 @@ void *threadedMonitor(void *args){
 }
 #endif
 
+inline void remap(double prevMax, double newMax, double *pAlive, double *pAliveNew, double *pFailFunc, double *pFailFuncNew, unsigned int nSteps){
+  unsigned int i = 0, j = 0;
+
+  if(!pAlive || !pFailFunc){
+    (void)puts("Error, got NULL while remapping.");
+    return;
+  }
+
+  for(i = 0; i < nSteps; i++){
+    for(j = 0; j < nSteps; j++){
+      if(prevMax/nSteps*j >= newMax/nSteps*i && prevMax/nSteps*j < newMax/nSteps*i){
+        *(pFailFuncNew + i) += *(pFailFunc + j);
+	*(pAliveNew + i) += *(pAlive + j);
+      }
+    }
+  }
+}
+
 int main(int argc, char *argv[]){
   double *pDevTimes = NULL, *pLambdas = NULL, *pLVec = NULL, avgT = 0.0, maxTime = 0.0;
   int i = 0;
-  unsigned long int *pNDevs = NULL, *pNDevsTemp = NULL, nDevs = 0, j = 1, nClasses = 0, k = 0, rander = 0, nSteps = 0;
+  unsigned long int *pNDevs = NULL, *pNDevsTemp = NULL, nDevs = 0, j = 1, nClasses = 0, k = 0, rander = 0, nSteps = 0, nDevs1 = 0, nDevs2 = 0, nDevs3 = 0;
   FILE *histogram = NULL, *classes = NULL, *randInit = NULL;
   
 #ifdef THREADS
-  double *pAlives = NULL, *pFailFuncs = NULL, *pAlivesA[3] = {NULL}, *pFailFuncA[3] = {NULL}, maxTime1 = 0.0, maxTime2 = 0.0, maxTime3 = 0.0;
-  unsigned long int nThreads = 1, l = 0, nRestarts = 0, nDevs1 = 0, nDevs2 = 0, nDevs3 = 0;
+  double *pAlives = NULL, *pFailFuncs = NULL, *pAlivesA[3] = {NULL}, *pFailFuncA[3] = {NULL}, maxTime1 = 0.0, prevMax1 = 0.0, maxTime2 = 0.0, maxTime3 = 0.0;
+  unsigned long int nThreads = 1, l = 0, nRestarts = 0;
   THRD_ARG *pThrdParams = NULL;
   pthread_t *pThreads = NULL;
   pthread_attr_t threadAttr;
@@ -219,12 +237,15 @@ int main(int argc, char *argv[]){
     pFailFuncA[k] = calloc(nSteps, sizeof(double));
   }
 
+  nDevs1 = nDevs;
+
   for(l = 0; l < nRestarts; l++){
+    maxTime = maxTime1 = maxTime2 = maxTime3 = avgT = 0;
 #endif
 /* First period of life. */
     i = *pNDevs;
 
-    for(j = 0, k = 0; j < nDevs; j++){
+    for(j = 0, k = 0; j < nDevs1; j++){
     
       if(j > i){
         i += *(pNDevs + k + 1);
@@ -232,16 +253,18 @@ int main(int argc, char *argv[]){
       }
     
       *(pDevTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
-      avgT += *(pDevTimes + j);
-    
+      if(*(pDevTimes + j) < INFINITY){
+        avgT += *(pDevTimes + j);
+      }
+
       if(*(pDevTimes + j) > maxTime){
         maxTime = *(pDevTimes + j);
       }
     
-      (void)printPrcnt((double)j/(double)nDevs*100.0, 0.1, 20);
+      (void)printPrcnt((double)j/(double)nDevs1*100.0, 0.1, 20);
     }
   
-    avgT /= nDevs;
+    avgT /= nDevs1;
 
     (void)printf("Average operation time for first stage %f\n", avgT);
 
@@ -251,7 +274,7 @@ int main(int argc, char *argv[]){
 #ifndef THREADS
     for(stepper = 0; stepper <= maxTime; stepper += maxTime/nSteps){
       failFunc = alive = 0;
-      for(j = 0; j < nDevs; j++){
+      for(j = 0; j < nDevs1; j++){
         if(*(pDevTimes + j) >= stepper){
 	  alive++;
   	  if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
@@ -261,17 +284,21 @@ int main(int argc, char *argv[]){
       }
       (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
       if(alive > STABLE){
-        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs1, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
       }
     }
 #else
-    nDevs1 = nDevs;
+    prevMax1 = maxTime1;
     maxTime1 = maxTime;
     pAlives = calloc(nSteps, sizeof(double));
     pFailFuncs = calloc(nSteps, sizeof(double));
     pthread_attr_init(&threadAttr);
     pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_JOINABLE);
-  
+
+    if(l){
+      remap(prevMax1, maxTime1, pAlivesA[0], pAlivesA[0], pFailFuncA[0], pFailFuncA[0], nSteps);
+    }
+
     for(i = 0; i < nThreads; i++){
       (pThrdParams + i)->stopIndx = nSteps/nThreads * (i+1);
       (pThrdParams + i)->startIndx = nSteps/nThreads * i;
@@ -312,9 +339,9 @@ int main(int argc, char *argv[]){
 
     i = *pNDevs;
 
-    for(j = 0, nDevs = 0; j < nClasses; j++){
-      if(nDevs < *(pNDevs + j)){
-        nDevs = *(pNDevs + j);
+    for(j = 0, nDevs2 = 0; j < nClasses; j++){
+      if(nDevs2 < *(pNDevs + j)){
+        nDevs2 = *(pNDevs + j);
       }
     }
 
@@ -325,7 +352,7 @@ int main(int argc, char *argv[]){
     avgT = maxTime = 0.0;
 
 /* Prepare bundles for simulation. */
-    while(i < nDevs){
+    while(i < nDevs2){
       k = 0;
 
       for(j = 0; j < nClasses; j++){
@@ -337,18 +364,20 @@ int main(int argc, char *argv[]){
       }
 
       *(pDevTimes + i) = generateTime(pLVec, k, SEQUE);
-      avgT += *(pDevTimes + i);
+      if(*(pDevTimes + i) < INFINITY){
+        avgT += *(pDevTimes + i);
+      }
     
       if(*(pDevTimes + i) > maxTime){
         maxTime = *(pDevTimes + i);
       }
  
       ++i;
-      (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
+      (void)printPrcnt((double)i/(double)nDevs2*100.0, 0.1, 20);
     }
 
 /* Simulating  */
-    avgT /= nDevs;
+    avgT /= nDevs2;
 
     (void)printf("Average operation time for second stage %f\n", avgT);
 
@@ -358,7 +387,7 @@ int main(int argc, char *argv[]){
 /* Calculate R(t) and Lambda(t) */
     for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
       failFunc = alive = 0;
-      for(j = 0; j < nDevs; j++){
+      for(j = 0; j < nDevs2; j++){
         if(*(pDevTimes + j) >= stepper){
 	  alive++;
 	  if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
@@ -369,11 +398,10 @@ int main(int argc, char *argv[]){
       (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
 
       if(alive > STABLE){
-        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs2, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
       }
     }
 #else
-    nDevs2 = nDevs;
     maxTime2 = maxTime;
     pAlives = calloc(nSteps, sizeof(double));
     pFailFuncs = calloc(nSteps, sizeof(double));
@@ -419,9 +447,9 @@ int main(int argc, char *argv[]){
 
     i = *pNDevs;
 
-    for(j = 0, nDevs = 0; j < nClasses; j++){
-      if(nDevs < *(pNDevs + j)){
-        nDevs = *(pNDevs + j);
+    for(j = 0, nDevs3 = 0; j < nClasses; j++){
+      if(nDevs3 < *(pNDevs + j)){
+        nDevs3 = *(pNDevs + j);
       }
     }
  
@@ -430,7 +458,7 @@ int main(int argc, char *argv[]){
     avgT = maxTime = 0.0;
 
 /* Prepare bundles for simulation. */
-    while(i < nDevs){
+    while(i < nDevs3){
       k = 0;
 
       for(j = 0; j < nClasses; j++){
@@ -442,18 +470,21 @@ int main(int argc, char *argv[]){
       }
 
       *(pDevTimes + i) = generateTime(pLVec, k, PARAL);
-      avgT += *(pDevTimes + i);
-    
+      
+      if(*(pDevTimes + i) < INFINITY){
+        avgT += *(pDevTimes + i);
+      }
+
       if(*(pDevTimes + i) > maxTime){
         maxTime = *(pDevTimes + i);
       }
  
       ++i;
-      (void)printPrcnt((double)i/(double)nDevs*100.0, 0.1, 20);
+      (void)printPrcnt((double)i/(double)nDevs3*100.0, 0.1, 20);
     }
 
 /* Simulating  */
-    avgT /= nDevs;
+    avgT /= nDevs3;
 
     (void)printf("Average operation time for third stage %f\n", avgT);
 
@@ -463,7 +494,7 @@ int main(int argc, char *argv[]){
 /* Calculate R(t) and Lambda(t) */
     for(stepper = maxTime/nSteps; stepper <= maxTime; stepper += maxTime/nSteps){
       failFunc = alive = 0;
-      for(j = 0; j < nDevs; j++){
+      for(j = 0; j < nDevs3; j++){
         if(*(pDevTimes + j) >= stepper){
 	  alive++;
 	  if(*(pDevTimes + j) < (stepper + maxTime/nSteps)){
@@ -474,11 +505,10 @@ int main(int argc, char *argv[]){
       (void)printPrcnt((double)stepper/(double)maxTime*100.0, 0.1, 20);
 
       if(alive > STABLE){
-        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
+        (void)fprintf(histogram, "%f\t%f\t%f\t%lu\n", stepper, (double)alive/(double)nDevs3, ((double)failFunc/(double)alive)*((double)nSteps/(double)maxTime), alive);
       }
     }
 #else
-    nDevs3 = nDevs;
     maxTime3 = maxTime;
     pAlives = calloc(nSteps, sizeof(double));
     pFailFuncs = calloc(nSteps, sizeof(double));
