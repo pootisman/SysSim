@@ -14,8 +14,10 @@
 #define DEAD 0x0F0F
 #define ALIVE 0xF0F0
 #define REPAIRING 0xFFFF
+
 #define DISCRT 100.0
 #define CEIL 50.0
+#define NDEVS 300
 
 double timer = 0.0;
 
@@ -56,24 +58,40 @@ double getTime(SUBSYS *elem, int *nBrigs, unsigned short *nBrigsBusy){
       temp1 = -(1.0/elem->lambda)*log((double)rand()/(double)RAND_MAX);
       elem->state = ALIVE;
       *(nBrigsBusy) -= 1;
+    }else if(elem->state == DEAD && *nBrigsBusy < *nBrigs){
+      elem->state = REPAIRING;
+      *nBrigsBusy += 1;
     }
     elem->t += temp1;
   }else if(elem->bindType == SEQUENTIAL && timer > elem->t){
     temp1 = INFINITY;
-    (void)puts("Seq sel");
-    (void)fflush(stdout);
+    fail = 0x0;
     for(i = 0; i < elem->nSubs; i++){
       if((temp2 = getTime(*elem->conts + i, nBrigs, nBrigsBusy)) < temp1){
         temp1 = temp2;
       }
-      if((*elem->conts + i)->state == DEAD){
+      if((*elem->conts + i)->state != ALIVE){
 	elem->state = DEAD;
 	fail = 0xFF;
-	(void)puts("fsdfd");
       }
     }
     if(fail == 0x0){
       elem->state = ALIVE;
+    }
+  }else if(elem->bindType == PARALLEL && timer > elem->t){
+    fail = 0xFF;
+    temp1 = 0;
+    for(i = 0; i < elem->nSubs; i++){
+      if((temp2 = getTime(*elem->conts + i, nBrigs, nBrigsBusy)) > temp1){
+	temp1 = temp2;
+      }
+      if((*elem->conts + i)->state == ALIVE){
+	elem->state = ALIVE;
+	fail = 0x0;
+      }
+    }
+    if(fail == 0xFF){
+      elem->state = DEAD;
     }
   }
   
@@ -81,18 +99,28 @@ double getTime(SUBSYS *elem, int *nBrigs, unsigned short *nBrigsBusy){
 }
 
 inline unsigned char isAlive(SUBSYS *elem){
+  unsigned int i;
   if(!elem){
     (void)puts("Error, got NULL in isAlive.");
     return 0x0;
   }
 
- /* if(elem->bindType == SINGLE){(*/
+  if(elem->bindType == SINGLE){
     return (elem->state == ALIVE) ? (0xFF) : (0x0);
-/*  }else{
-    
+  }else if(elem->bindType == SEQUENTIAL){
+    for(i = 0; i < elem->nSubs; i++){
+      if(isAlive(*elem->conts + i) == 0x0){
+        return 0x0;
+      }
+    }
+  }else if(elem->bindType == PARALLEL){
+    for(i = 0; i < elem->nSubs; i++){
+      if(isAlive(*elem->conts + i) == 0xFF){
+        return 0xFF;
+      }
+    }
   }
-*/
-  return 0x0;
+  return 0x00;
 }
 
 SUBSYS **cpyDevs(const SUBSYS *orig, const unsigned int nTimes, const unsigned int nDevs){
@@ -107,18 +135,7 @@ SUBSYS **cpyDevs(const SUBSYS *orig, const unsigned int nTimes, const unsigned i
 
   for(i = 0; i < nTimes; i++){
     *(newDevs + i) = calloc(nDevs, sizeof(SUBSYS));
-    for(j = 0; j < orig->nPrim; j++){
-      (*(newDevs + i) + j)->lambda = (orig + j)->lambda;
-      (*(newDevs + i) + j)->mu = (orig + j)->mu;
-      (*(newDevs + i) + j)->t = (orig + j)->t;
-      (*(newDevs + i) + j)->state = (orig + j)->state;
-      (*(newDevs + i) + j)->nBrigs = (orig + j)->nBrigs;
-      (*(newDevs + i) + j)->nBrigsBusy = (orig + j)->nBrigsBusy;
-      (*(newDevs + i) + j)->bindType = (orig + j)->bindType;
-      (*(newDevs + i) + j)->nSubs = (orig + j)->nSubs;
-      (*(newDevs + i) + j)->conts = (orig + j)->conts;
-    }
-    for(;j < nDevs; j++){
+    for(j = 0;j < nDevs - orig->nPrim; j++){
       (*(newDevs + i) + j)->state = (orig + j)->state;
       (*(newDevs + i) + j)->bindType = (orig + j)->bindType;
       (*(newDevs + i) + j)->nSubs = (orig + j)->nSubs;
@@ -128,6 +145,17 @@ SUBSYS **cpyDevs(const SUBSYS *orig, const unsigned int nTimes, const unsigned i
       for(k = 0; k < (orig + j)->nSubs; k++){
         *((*(newDevs + i) + j)->conts + k) = *(newDevs + i) + ((*(orig + j)->conts + k) - orig);
       }
+    }
+    for(; j < nDevs; j++){
+      (*(newDevs + i) + j)->lambda = (orig + j)->lambda;
+      (*(newDevs + i) + j)->mu = (orig + j)->mu;
+      (*(newDevs + i) + j)->t = (orig + j)->t;
+      (*(newDevs + i) + j)->state = (orig + j)->state;
+      (*(newDevs + i) + j)->nBrigs = (orig + j)->nBrigs;
+      (*(newDevs + i) + j)->nBrigsBusy = (orig + j)->nBrigsBusy;
+      (*(newDevs + i) + j)->bindType = (orig + j)->bindType;
+      (*(newDevs + i) + j)->nSubs = (orig + j)->nSubs;
+      (*(newDevs + i) + j)->conts = (orig + j)->conts;
     }
   }
 
@@ -155,12 +183,12 @@ void freeDevs(SUBSYS **freeSys, unsigned int nDevs, unsigned int nDevsEach){
 
 int main(int argc, char *argv[]){
   int i = 0;
-  unsigned int nDevs = 0, nPrim = 0, init = 0, nBrigs = 0, nCopies = 0, nAlives = 0, j = 1, k = 0, l = 0;
+  unsigned int nDevs = 0, nPrim = 0, init = 0, nBrigs = 0, nCopies = NDEVS, nAlives = 0, j = 1, k = 0, l = 0;
   unsigned short m = 0;
   double ceiling = CEIL, discrete = DISCRT;
   FILE *fSysDesc = NULL, *initRand = NULL;
   SUBSYS *pSys = NULL, **pModels = NULL;
-  
+
   while((i = getopt(argc, argv, VALID_ARGS)) != -1){
     switch(i){
       case('I'):{
@@ -182,13 +210,7 @@ int main(int argc, char *argv[]){
 	  for(k = 0; k < nDevs; k++){
 	    (pSys + k)->state = ALIVE;
 	    (pSys + k)->t = 0.0;
-	    if(k < nPrim){
-	      if(fscanf(fSysDesc, "%lf\t%lf\n", &(pSys + k)->lambda, &(pSys + k)->mu) < 2){
-	        (void)puts("Error reading class data!");
-	        return EXIT_FAILURE;
-	      }
-	      (pSys + k)->bindType = SINGLE;
-	    }else{
+	    if(k < nDevs - nPrim){
 	      if(fscanf(fSysDesc, "%hu\t%hu\t", &(pSys + k)->nSubs, &(pSys + k)->bindType) < 2){
 	        (void)puts("Error reading subsystem data!");
 	        return EXIT_FAILURE;
@@ -205,7 +227,13 @@ int main(int argc, char *argv[]){
 		(void)puts("Error reading subsystems!");
 		return EXIT_FAILURE;
 	      }
-	      *((pSys + k)->conts + (pSys + k)->nSubs) = pSys + m - 1;
+	      *((pSys + k)->conts + (pSys + k)->nSubs - 1) = pSys + m - 1;
+	    }else{
+	      if(fscanf(fSysDesc, "%lf\t%lf\n", &(pSys + k)->lambda, &(pSys + k)->mu) < 2){
+	        (void)puts("Error reading class data!");
+	        return EXIT_FAILURE;
+	      }
+	      (pSys + k)->bindType = SINGLE;
 	    }
 	  }
 #ifdef DEBUG
@@ -252,6 +280,11 @@ int main(int argc, char *argv[]){
       }
     }
     j++;
+  }
+
+  if(!pSys){
+    (void)puts("Error, no system loaded, can't continue.");
+    return EXIT_FAILURE;
   }
 
   initRand = fopen("/dev/urandom", "rb");
