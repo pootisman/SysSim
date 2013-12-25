@@ -59,6 +59,7 @@ double getTime(SUBSYS *elem, int *nBrigs, unsigned short *nBrigsBusy){
       elem->state = ALIVE;
       *(nBrigsBusy) -= 1;
     }else if(elem->state == DEAD && *nBrigsBusy < *nBrigs){
+      temp1 = -(1.0/elem->mu)*log((double)rand()/(double)RAND_MAX);
       elem->state = REPAIRING;
       *nBrigsBusy += 1;
     }
@@ -80,7 +81,7 @@ double getTime(SUBSYS *elem, int *nBrigs, unsigned short *nBrigsBusy){
     }
   }else if(elem->bindType == PARALLEL && timer > elem->t){
     fail = 0xFF;
-    temp1 = 0;
+    temp1 = 0.0;
     for(i = 0; i < elem->nSubs; i++){
       if((temp2 = getTime(*elem->conts + i, nBrigs, nBrigsBusy)) > temp1){
 	temp1 = temp2;
@@ -113,6 +114,7 @@ inline unsigned char isAlive(SUBSYS *elem){
         return 0x0;
       }
     }
+    return 0xFF;
   }else if(elem->bindType == PARALLEL){
     for(i = 0; i < elem->nSubs; i++){
       if(isAlive(*elem->conts + i) == 0xFF){
@@ -206,9 +208,9 @@ int main(int argc, char *argv[]){
 
 	  pSys = calloc(nDevs, sizeof(SUBSYS));
 	  pSys->nBrigs = nBrigs;
-	  pSys->nPrim = nPrim;
+	  pSys->nBrigsBusy = pSys->nPrim = nPrim;
 	  for(k = 0; k < nDevs; k++){
-	    (pSys + k)->state = ALIVE;
+	    (pSys + k)->state = REPAIRING;
 	    (pSys + k)->t = 0.0;
 	    if(k < nDevs - nPrim){
 	      if(fscanf(fSysDesc, "%hu\t%hu\t", &(pSys + k)->nSubs, &(pSys + k)->bindType) < 2){
@@ -221,13 +223,13 @@ int main(int argc, char *argv[]){
 		  (void)puts("Error reading subsystems!");
 		  return EXIT_FAILURE;
 		}
-		*((pSys + k)->conts + l) = pSys + m - 1;
+		*((pSys + k)->conts + l) = pSys + m;
 	      }
 	      if(fscanf( fSysDesc, "%hu\n", &m) < 1){
 		(void)puts("Error reading subsystems!");
 		return EXIT_FAILURE;
 	      }
-	      *((pSys + k)->conts + (pSys + k)->nSubs - 1) = pSys + m - 1;
+	      *((pSys + k)->conts + (pSys + k)->nSubs - 1) = pSys + m;
 	    }else{
 	      if(fscanf(fSysDesc, "%lf\t%lf\n", &(pSys + k)->lambda, &(pSys + k)->mu) < 2){
 	        (void)puts("Error reading class data!");
