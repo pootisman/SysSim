@@ -1,0 +1,15 @@
+MANUAL FOR SYSTEM SIMULATOR:
+
+1) Recoverable systems.
+\t - tab
+\n - newline
+Syntaxis of a system file:
+<total number of systems>\t<number of primitive systems>\t<number of brigades>\n
+First complex systems appear.
+<number of systems in bundle>\t<bundle type>\t<indexes of systems in bundle>
+Then You define the bricks of complex systems.
+<lambda>\t<mu>
+
+Output shall be forwarded to file where you wish to store simulation data.
+
+Use -h Luke!

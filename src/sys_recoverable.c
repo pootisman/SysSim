@@ -309,9 +309,7 @@ int main(int argc, char *argv[]){
         nAlives++;
       }
     }
-#ifdef DEBUG
     (void)printf("%f\t%f\n", timer ,(double)nAlives/nCopies);
-#endif
     timer += 1.0/discrete;
   }
 
