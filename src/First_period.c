@@ -213,7 +213,9 @@ int main(int argc, char *argv[]){
     }
     
     *(pDevTimes + j) = -(1.0/ *(pLambdas + k))*log((double)rand()/(double)RAND_MAX);
-    avgT += *(pDevTimes + j);
+    if(*(pDevTimes + j) < INFINITY){
+      avgT += *(pDevTimes + j);
+    }
     
     if(*(pDevTimes + j) > maxTime){
       maxTime = *(pDevTimes + j);
@@ -319,7 +321,9 @@ int main(int argc, char *argv[]){
     }
 
     *(pDevTimes + i) = generateTime(pLVec, k, SEQUE);
-    avgT += *(pDevTimes + i);
+    if(*(pDevTimes + i) < INFINITY){
+      avgT += *(pDevTimes + i);
+    }
     
     if(*(pDevTimes + i) > maxTime){
       maxTime = *(pDevTimes + i);
@@ -424,8 +428,9 @@ int main(int argc, char *argv[]){
     }
 
     *(pDevTimes + i) = generateTime(pLVec, k, PARAL);
-    avgT += *(pDevTimes + i);
-    
+    if(*(pDevTimes + i) < INFINITY){
+      avgT += *(pDevTimes + i);
+    }
     if(*(pDevTimes + i) > maxTime){
       maxTime = *(pDevTimes + i);
     }
