@@ -1,5 +1,18 @@
 MANUAL FOR SYSTEM SIMULATOR:
 
+[I] HOW TO BUILD:
+
+Run make, as a result You will get debug and release binaries in bin folder.
+You must have support for pthreads in order to build and run threaded versions.
+
+[II] HOW TO USE:
+
+To simulate first three periods of system, run First_Period for non-threaded
+version and FPT for threaded version. Help for these programs can be invoked
+using -h flag. Threaded version gives about x2 boost on i5 processor.
+
+[III] ADDITIONAL HELP:
+
 1) Recoverable systems.
 \t - tab
 \n - newline
@@ -11,5 +24,7 @@ Then You define the bricks of complex systems.
 <lambda>\t<mu>
 
 Output shall be forwarded to file where you wish to store simulation data.
+
+[IV] MINOR NOTE:
 
 Use -h Luke!

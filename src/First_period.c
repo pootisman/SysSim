@@ -43,7 +43,11 @@ inline double generateTime(double *pLambdas, unsigned char nClasses, unsigned ch
 
   if(connection == SEQUE){
     for(i = 1; i < nClasses; i++){
+#ifdef INVALID_TEST
+      tmp1 = -(1.0/ *(pLambdas + i))*log((double)rand()/(double)RAND_MAX) - (1.0/ *(pLambdas + i - 1))*log((double)rand()/(double)RAND_MAX);
+#else
       tmp1 = -(1.0/ *(pLambdas + i))*log((double)rand()/(double)RAND_MAX);
+#endif
       if(tmp1 < retVal){
 	retVal = tmp1;
       }
