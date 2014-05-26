@@ -1,0 +1,55 @@
+Настройка файлового сервера SAMBA с парольной аутентификацией.
+==============================================================
+
+Настройка файлового сервера SAMBA производилась под дистрибутивом Ubuntu Server 14.02. Были созданы две учётные записи Alice и Bob для проверки работы парольной аутентификации. Ниже приведены файлы настроек для файлового сервера.
+
+	[global]
+		workgroup = HOMEWORK
+		server string = %h server (Samba, Ubuntu)
+		server role = standalone server
+		map to guest = Bad User
+		obey pam restrictions = Yes
+		pam password change = Yes
+		passwd program = /usr/bin/passwd %u
+		passwd chat = *Enter\snew\s*\spassword:* %n\n *Retype\snew\s*\spassword:* %n\n *password\supdated\ssuccessfully* .
+		unix password sync = Yes
+		syslog = 0
+		log file = /var/log/samba/log.%m
+		max log size = 1000
+		dns proxy = No
+		usershare allow guests = Yes
+		panic action = /usr/share/samba/panic-action %d
+		idmap config * : backend = tdb
+	
+	[Bob]
+		comment = Bob Directories
+		path = /home/tester/Bob
+		valid users = Bob
+		read only = No
+		create mask = 0700
+		directory mask = 0700
+		valid users = bob
+		guest ok = no
+
+	[Alice]
+		comment = Alice Directories
+		path = /home/tester/Alice
+		valid users = Alice
+		read only = No
+		create mask = 0700
+		directory mask = 0700
+		valid users = alice
+		guest ok = no
+
+Опорной точкой послужил файл с настройками /etc/samba/smb.conf.sample. Как видно из настроек, папки пользователей разнесены. Для создания пользователей использовалась команда:
+	smbpasswd -a <имя пользователя>
+Для активации учётной записи использовалась команда:
+	smbpasswd -e <имя пользователя>
+
+Настройка Debian chroot в ОС FreeBSD.
+-------------------------------------
+
+Для создания chroot Debian в ОС FreeBSD необходимо активировать режим совместимости c Linux программами.
+Это можно сделать при помощи установки порта linux_compat_f10 из категории emulators. Далее необходимо установить программу 
+debootstrap, для удобной установки Debian в chroot. Следует заметить, что необходима загрузка модуля linux про помощи команды kldload.
+Далее, после выполнения команды debootstrap и chroot, можно начать установку и настройку сервера Apache.

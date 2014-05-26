@@ -11,7 +11,7 @@
 
 #define VALID_ARGS "I:N:h"
 
-#define STEPS 10000
+#define STEPS 2000
 
 #define HELP "Help\n-I <Classes file>\nClass file format:\n<# of device classes>\n<Class lambda>\t<Amount of devices in class>"
 
@@ -54,7 +54,7 @@ inline double generateTime(double *pLambdas, unsigned char nClasses, unsigned ch
     }
   }else if(connection == PARAL){
     for(i = 1; i < nClasses; i++){
-      retVal += -(1.0/ *(pLambdas + i))*log((double)rand()/(double)RAND_MAX);
+      retVal -= (1.0/ *(pLambdas + i))*log((double)rand()/(double)RAND_MAX);
     }
   }
 
