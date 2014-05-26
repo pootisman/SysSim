@@ -3,10 +3,6 @@
 
 Настройка файлового сервера SAMBA производилась под дистрибутивом Ubuntu Server 14.02. Были созданы две учётные записи Alice и Bob для проверки работы парольной аутентификации. Ниже приведены файлы настроек для файлового сервера.
 
-	#
-	# Sample configuration file for the Samba suite for Debian GNU/Linux.
-	#
-	#
 	# This is the main Samba configuration file. You should read the
 	# smb.conf(5) manual page in order to understand the options listed
 	# here. Samba has a huge number of configurable options most of which 
@@ -125,72 +121,6 @@
 	# to anonymous connections
 	   map to guest = bad user
 
-	########## Domains ###########
-
-	#
-	# The following settings only takes effect if 'server role = primary
-	# classic domain controller', 'server role = backup domain controller'
-	# or 'domain logons' is set 
-	#
-
-	# It specifies the location of the user's
-	# profile directory from the client point of view) The following
-	# required a [profiles] share to be setup on the samba server (see
-	# below)
-	;   logon path = \\%N\profiles\%U
-	# Another common choice is storing the profile in the user's home directory
-	# (this is Samba's default)
-	#   logon path = \\%N\%U\profile
-
-	# The following setting only takes effect if 'domain logons' is set
-	# It specifies the location of a user's home directory (from the client
-	# point of view)
-	;   logon drive = H:
-	#   logon home = \\%N\%U
-
-	# The following setting only takes effect if 'domain logons' is set
-	# It specifies the script to run during logon. The script must be stored
-	# in the [netlogon] share
-	# NOTE: Must be store in 'DOS' file format convention
-	;   logon script = logon.cmd
-
-	# This allows Unix users to be created on the domain controller via the SAMR
-	# RPC pipe.  The example command creates a user account with a disabled Unix
-	# password; please adapt to your needs
-	; add user script = /usr/sbin/adduser --quiet --disabled-password --gecos "" %u
-
-	# This allows machine accounts to be created on the domain controller via the 
-	# SAMR RPC pipe.  
-	# The following assumes a "machines" group exists on the system
-	; add machine script  = /usr/sbin/useradd -g machines -c "%u machine account" -d /var/lib/samba -s /bin/false %u
-
-	# This allows Unix groups to be created on the domain controller via the SAMR
-	# RPC pipe.  
-	; add group script = /usr/sbin/addgroup --force-badname %g
-
-	############ Misc ############
-
-	# Using the following line enables you to customise your configuration
-	# on a per machine basis. The %m gets replaced with the netbios name
-	# of the machine that is connecting
-	;   include = /home/samba/etc/smb.conf.%m
-
-	# Some defaults for winbind (make sure you're not using the ranges
-	# for something else.)
-	;   idmap uid = 10000-20000
-	;   idmap gid = 10000-20000
-	;   template shell = /bin/bash
-
-	# Setup usershare options to enable non-root users to share folders
-	# with the net usershare command.
-
-	# Maximum number of usershare. 0 (default) means that usershare is disabled.
-	;   usershare max shares = 100
-
-	# Allow users who've been granted usershare privileges to create
-	# public shares, not just authenticated ones
-	   usershare allow guests = yes
-
 	#======================= Share Definitions =======================
 
 	# Un-comment the following (and tweak the other settings below to suit)
@@ -216,84 +146,46 @@
 	   path = /home/tester/Alice
 	   valid users = Alice
 
-	#[homes]
-	#   comment = Home Directories
-	#   browseable = yes
-	#   guest ok = yes
-	#   read only = no
-	#   create mask = 0750
-	#   directory mask = 0750
-	#  path = /home/tester/Shared
-	# By default, \\server\username shares can be connected to by anyone
-	# with access to the samba server.
-	# Un-comment the following parameter to make sure that only "username"
-	# can connect to \\server\username
-	# This might need tweaking when using external authentication schemes
-	#   valid users = %S
-
-	# Un-comment the following and create the netlogon directory for Domain Logons
-	# (you need to configure Samba to act as a domain controller too.)
-	;[netlogon]
-	;   comment = Network Logon Service
-	;   path = /home/samba/netlogon
-	;   guest ok = yes
-	;   read only = yes
-
-	# Un-comment the following and create the profiles directory to store
-	# users profiles (see the "logon path" option above)
-	# (you need to configure Samba to act as a domain controller too.)
-	# The path below should be writable by all users so that their
-	# profile directory may be created the first time they log on
-	;[profiles]
-	;   comment = Users profiles
-	;   path = /home/samba/profiles
-	;   guest ok = no
-	;   browseable = no
-	;   create mask = 0600
-	;   directory mask = 0700
-
-	;[printers]
-	;   comment = All Printers
-	;   browseable = no
-	;   path = /var/spool/samba
-	;   printable = yes
-	;   guest ok = no
-	;   read only = yes
-	;   create mask = 0700
-
-	# Windows clients look for this share name as a source of downloadable
-	# printer drivers
-	;[print$]
-	;   comment = Printer Drivers
-	;   path = /var/lib/samba/printers
-	;   browseable = yes
-	;   read only = yes
-	;   guest ok = no
-	# Uncomment to allow remote administration of Windows print drivers.
-	# You may need to replace 'lpadmin' with the name of the group your
-	# admin users are members of.
-	# Please note that you also need to set appropriate Unix permissions
-	# to the drivers directory for these users to have write rights in it
-	;   WRITE LIST = ROOT, @LPADMIN
-
-
 Опорной точкой послужил файл с настройками /etc/samba/smb.conf.sample. Как видно из настроек, папки пользователей разнесены. Для создания пользователей использовалась команда:
 	smbpasswd -a <имя пользователя>
 Для активации учётной записи использовалась команда:
 	smbpasswd -e <имя пользователя>
+Для проверки файла на корректность использовалась комманда testparm, как и реккомендовалось в файле настроек. Для запуска сервиса используется команда:
+
+	service samba enable
+	service samba start
 
 Настройка Debian chroot в ОС FreeBSD.
 -------------------------------------
+После установки и настройки базовой системы необходимо скачать и обновить дерево портов FreeBSD. Это можно сделать при помощи комманды
 
-Для создания chroot Debian в ОС FreeBSD необходимо активировать режим совместимости c Linux программами.
-Это можно сделать при помощи установки порта linux_base_f10 из категории emulators. Для установки этого порта надо ввести следующие команды:
+	portsnap fetch extract
+
+С этого момента возможна установка пакетов с более тонкой настройкой. Для создания chroot Debian в ОС FreeBSD необходимо активировать режим совместимости c Linux программами. Это можно сделать при помощи установки порта linux_base_f10 из категории emulators. Для установки этого порта надо ввести следующие команды:
 
 	cd /usr/ports/emulators/linux_base_f10
 	make clean install clean
+
+Установка порта debootstrap:
+
 	cd ../../sysutils/debootstrap
 	make clean install clean
 
 При установке будут запрошены параметры сборки, от них будет зависеть то, как собираются программы. Установки настраиваются администратором в соответствии с нуждами системы. После установки данных програм можно приступать к созданию chroot песочниц. Следует заметить, что необходима загрузка модуля linux про помощи команды kldload.
-Далее, после выполнения команды debootstrap и chroot, можно начать установку и настройку сервера Apache. Можно автоматизировать загрузку модулей
-для поддержки Linux, добавив linux_load="YES" в файл /boot/loader.conf. Данная строка включит инициализацию модулей при загрузке ядра FreeBSD. Остальные отличия от Linux при настройке системы заключаются в том, что файлы настроек находятся в
-других директориях.
+
+	kldload linux
+	kldload tmpfs
+	kldload linprocfs
+
+Впринципе, для автоматизации загрузки модулей, можно добавить следующюю строку в конфигурационный файл:
+
+	linux_load="YES"
+
+Данная строка включит инициализацию модулей при загрузке ядра FreeBSD. Создание chroot, устаовка базовой системы и вход в новую среду.
+
+	mkdir /sandboxes
+	mkdir /sandboxes/sbox0
+	debootstrap squeeze /sandboxes/sbox0
+	chroot /sandboxes/sbox0 /bin/bash
+
+Далее, после выполнения команды debootstrap и chroot, можно начать установку и настройку сервера Apache. 
